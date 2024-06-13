@@ -55,41 +55,45 @@ impl Environment {
 
         // loop through all the values of the dag view
         match state.vars.get("dag") {
-            Some(VarContent::Seq(model_dag)) => {
-                match model_dag.get(self.process_id as usize-1) {
-                    Some(VarContent::Seq(model_view)) => {
-                        for round_view_wrap in model_view.iter() {
-                            match round_view_wrap {
-                                VarContent::Seq(round_view) => {
-                                    for v_wrap in round_view.iter() {
-                                        match v_wrap {
-                                            VarContent::Struct(v) => {
-                                                if Self::unwrap_int(
-                                                    v.get("block").expect(r"Not the right format of vertex in dag !")
-                                                ).expect(r"Not the right format of vertex in dag !") == 1 {
-                                                    let real_v = Self::generate_vertex(v_wrap);
-                                                    match dag.get_vertex(real_v.hash(), &real_v.round()) {
-                                                        | Some(_) => (),
-                                                        | None => {
-                                                            println!("I found a bug !");
-                                                            println!("{:?}", dag);
-                                                            return false;
-                                                        }
+            Some(VarContent::Seq(model_dag)) => match model_dag.get(self.process_id as usize - 1) {
+                Some(VarContent::Seq(model_view)) => {
+                    for round_view_wrap in model_view.iter() {
+                        match round_view_wrap {
+                            VarContent::Seq(round_view) => {
+                                for v_wrap in round_view.iter() {
+                                    match v_wrap {
+                                        VarContent::Struct(v) => {
+                                            if Self::unwrap_int(
+                                                v.get("block").expect(
+                                                    r"Not the right format of vertex in dag !",
+                                                ),
+                                            )
+                                            .expect(r"Not the right format of vertex in dag !")
+                                                == 1
+                                            {
+                                                let real_v = Self::generate_vertex(v_wrap);
+                                                match dag.get_vertex(real_v.hash(), &real_v.round())
+                                                {
+                                                    Some(_) => (),
+                                                    None => {
+                                                        println!("I found a bug !");
+                                                        println!("{:?}", dag);
+                                                        return false;
                                                     }
                                                 }
                                             }
-                                            _ => panic!(r"Not the right format of dag !")
                                         }
+                                        _ => panic!(r"Not the right format of dag !"),
                                     }
                                 }
-                                _ => panic!(r"Not the right format of dag !")
                             }
+                            _ => panic!(r"Not the right format of dag !"),
                         }
-                    },
-                    _ => panic!(r"Not the right format of dag !")
+                    }
                 }
+                _ => panic!(r"Not the right format of dag !"),
             },
-            _ => panic!(r"Not the right format of dag !")
+            _ => panic!(r"Not the right format of dag !"),
         }
         true
     }
@@ -138,7 +142,7 @@ impl Environment {
                                     .await
                                     .unwrap();
                                 if !self.control_dag(&mut dag_recv, &self.trace[i + 1]).await {
-                                    println!("Found a bug at state {}", i+2);
+                                    println!("Found a bug at state {}", i + 2);
                                     return false;
                                 }
                             }
@@ -152,7 +156,7 @@ impl Environment {
                                     .await
                                     .unwrap();
                                 if !self.control_dag(&mut dag_recv, &self.trace[i + 1]).await {
-                                    println!("Found a bug at state {}", i+2);
+                                    println!("Found a bug at state {}", i + 2);
                                     return false;
                                 }
                             }
@@ -163,7 +167,7 @@ impl Environment {
                                 let formated_vert = Self::generate_vertex(&vert);
                                 vertex_transfert_snd.send(formated_vert).await.unwrap();
                                 if !self.control_dag(&mut dag_recv, &self.trace[i + 1]).await {
-                                    println!("Found a bug at state {}", i+2);
+                                    println!("Found a bug at state {}", i + 2);
                                     return false;
                                 }
                             }
@@ -174,7 +178,7 @@ impl Environment {
                                 vertex_creation_snd.send(()).await.unwrap();
                                 let _ = self.vertex_channel_broadcast.recv().await.unwrap();
                                 if !self.control_dag(&mut dag_recv, &self.trace[i + 1]).await {
-                                    println!("Found a bug at state {}", i+2);
+                                    println!("Found a bug at state {}", i + 2);
                                     return false;
                                 }
                             }
@@ -232,9 +236,7 @@ impl Environment {
                 .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("source")));
                 if round == 0 {
                     return Vertex::new(
-                        Committee::default()
-                            .get_node_key(source as u32)
-                            .unwrap(),
+                        Committee::default().get_node_key(source as u32).unwrap(),
                         1,
                         Block::default(),
                         BTreeMap::new(),
@@ -266,9 +268,7 @@ impl Environment {
                 }
 
                 Vertex::new(
-                    Committee::default()
-                        .get_node_key(source as u32)
-                        .unwrap(),
+                    Committee::default().get_node_key(source as u32).unwrap(),
                     round + 1,
                     Self::generate_block(1),
                     parents,
@@ -280,50 +280,50 @@ impl Environment {
         }
     }
 
-    fn compare_varcontent(v0 : &VarContent, v1 : &VarContent) -> bool {
+    fn compare_varcontent(v0: &VarContent, v1: &VarContent) -> bool {
         match (v0, v1) {
-            | (VarContent::Bool(b0), VarContent::Bool(b1)) => *b0 && *b1,
-            | (VarContent::Int(b0), VarContent::Int(b1)) => *b0 == *b1,
-            | (VarContent::Seq(b0), VarContent::Seq(b1)) => {
+            (VarContent::Bool(b0), VarContent::Bool(b1)) => *b0 && *b1,
+            (VarContent::Int(b0), VarContent::Int(b1)) => *b0 == *b1,
+            (VarContent::Seq(b0), VarContent::Seq(b1)) => {
                 for (a, b) in b0.iter().zip(b1.iter()) {
                     if !Self::compare_varcontent(a, b) {
-                        return false
+                        return false;
                     }
                 }
                 true
             }
-            | (VarContent::Set(b0), VarContent::Set(b1)) => {
+            (VarContent::Set(b0), VarContent::Set(b1)) => {
                 for (a, b) in b0.iter().zip(b1.iter()) {
                     if !Self::compare_varcontent(a, b) {
-                        return false
+                        return false;
                     }
                 }
                 true
             }
-            | (VarContent::Struct(b0), VarContent::Struct(b1)) => {
+            (VarContent::Struct(b0), VarContent::Struct(b1)) => {
                 for (a, aval) in b0.iter() {
                     match b1.get(a) {
                         Some(b) => {
                             if !Self::compare_varcontent(aval, b) {
-                                return false
+                                return false;
                             }
                         }
-                        _ => return false
+                        _ => return false,
                     }
                 }
                 for (a, aval) in b1.iter() {
                     match b0.get(a) {
                         Some(b) => {
                             if !Self::compare_varcontent(aval, b) {
-                                return false
+                                return false;
                             }
                         }
-                        _ => return false
+                        _ => return false,
                     }
                 }
                 true
             }
-            | _ => false
+            _ => false,
         }
     }
 
@@ -401,7 +401,10 @@ impl Environment {
                                                 if *n == 4 {
                                                     return Action::FaultyBroadcast;
                                                 } else {
-                                                    return Action::NextRound(*n, vert.get("vertex").unwrap().clone());
+                                                    return Action::NextRound(
+                                                        *n,
+                                                        vert.get("vertex").unwrap().clone(),
+                                                    );
                                                 }
                                             }
                                             _ => panic!(r"Not the right format of marked vertex !"),
@@ -416,7 +419,10 @@ impl Environment {
                                         if *n == 4 {
                                             return Action::FaultyBroadcast;
                                         } else {
-                                            return Action::NextRound(*n, vert.get("vertex").unwrap().clone());
+                                            return Action::NextRound(
+                                                *n,
+                                                vert.get("vertex").unwrap().clone(),
+                                            );
                                         }
                                     }
                                     _ => panic!(r"Not the right format of marked vertex !"),

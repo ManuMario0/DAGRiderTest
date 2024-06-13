@@ -9,3 +9,4 @@ vertex = { path = "../impl/vertex" }
 consensus = { path = "../impl/consensus" }
 parser = { path = "../parser" }
 tokio = { version = "1.5.0", features = ["full"] }
+indicatif = "0.17.8"
