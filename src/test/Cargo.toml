@@ -1,0 +1,11 @@
+[package]
+name = "test"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+model = { path = "../impl/model" }
+vertex = { path = "../impl/vertex" }
+consensus = { path = "../impl/consensus" }
+parser = { path = "../parser" }
+tokio = { version = "1.5.0", features = ["full"] }
