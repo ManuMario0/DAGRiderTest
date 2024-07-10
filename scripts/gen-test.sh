@@ -7,6 +7,23 @@ if [ -z "${TLAEclipseDir}" ];then
     TLAEclipseDir="/Applications/TLA+ Toolbox.app/Contents/Eclipse"
 fi
 
+if [[ $# = 1 && $1 = "-q" ]];then
+	quiet=true
+else
+	quiet=false
+fi
+
+echo "Building target ..."
+cd ../src/test/
+if $quiet;then
+	cargo build -r  2> /dev/null
+else
+	cargo build -r
+fi
+cd ../../scripts/
+
+echo "Target built !"
+
 echo "Please complete the missing fields :"
 
 read -p "Workers : " workers
@@ -28,13 +45,17 @@ java -XX:+UseParallelGC \
 		-depth $trace_len \
 		-deadlock \
 		-workers $workers \
-		-config ../spec/no-state-merge/DAGRider.toolbox/Model_test_SnapShot_1718237943894/MC.cfg \
+		-config ../spec/no-state-merge/MC.cfg \
 		-continue \
-		../spec/no-state-merge/DAGRider.toolbox/Model_test_SnapShot_1718237943894/MC.tla \
+		../spec/no-state-merge/MC.tla \
 		> /dev/null
 
 echo "Trace generated !"
 echo "Starting tests ..."
+
+#cd ../src/test/
+#cargo run -q -r ../../scripts/$working_dir/trace $workers $trace_count
+#cd ../../scripts
 
 ../src/test/target/release/test $working_dir/trace $workers $trace_count
 

@@ -1,6 +1,7 @@
 use std::io::{self, BufRead, Write, Read};
 use std::fs::File;
 use std::io::BufReader;
+use std::collections::HashMap;
 
 use lrlex::lrlex_mod;
 use lrpar::lrpar_mod;
@@ -14,15 +15,38 @@ lrlex_mod!("calc.l");
 // with a suffix of `_y`).
 lrpar_mod!("calc.y");
 
-pub type Trace = calc_y::Trace;
-pub type State = calc_y::State;
-pub type VarContent = calc_y::VarContent;
+lrpar_mod!("varcontent.l");
+lrpar_mod!("varcontent.y");
+
+#[derive(Debug, PartialEq, Eq, Clone, arbitrary::Arbitrary)]
+pub enum VarContent {
+    Set(Box<Vec<VarContent>>),
+    Seq(Box<Vec<VarContent>>),
+    Int(u64),
+    Struct(HashMap<String, VarContent>),
+    Bool(bool),
+	String(String),
+}
+
+#[derive(Debug)]
+pub struct Var {
+	pub name: String,
+	pub content: VarContent,
+}
+
+#[derive(Debug)]
+pub struct State {
+    pub label: String,
+    pub vars: HashMap<String, VarContent>,
+}
+
+pub type Trace = Vec<State>;
 
 pub struct Parser {
     lexer : lrlex::LRNonStreamingLexerDef<lrlex::defaults::DefaultLexerTypes>
 }
 
-pub fn parse(input: &str) -> Result<calc_y::Trace, ()> {
+pub fn parse(input: &str) -> Result<Trace, ()> {
     let lexerdef = calc_l::lexerdef();
     let lexer = lexerdef.lexer(input);
     let (res, errs) = calc_y::parse(&lexer);
@@ -32,7 +56,17 @@ pub fn parse(input: &str) -> Result<calc_y::Trace, ()> {
     }
 }
 
-pub fn parse_file(file_name : &str) -> Result<calc_y::Trace, ()> {
+pub fn parse_varcontent(input: &str) -> Result<VarContent, ()> {
+    let lexerdef = varcontent_l::lexerdef();
+    let lexer = lexerdef.lexer(input);
+    let (res, errs) = varcontent_y::parse(&lexer);
+    match res {
+        Some(Ok(r)) => Ok(r),
+        _ => Err(())
+    }
+}
+
+pub fn parse_file(file_name : &str) -> Result<Trace, ()> {
     let mut f = File::open(file_name).unwrap();
     let mut contents = String::new();
     f.read_to_string(&mut contents).unwrap();
@@ -46,7 +80,22 @@ impl Parser {
         }
     }
 
-    pub fn parse_file(&self, file_name: &str) -> Result<calc_y::Trace, ()> {
+    pub fn create_parser_varcontent() -> Self {
+        Parser {
+            lexer : varcontent_l::lexerdef()
+        }
+    }
+
+    pub fn parse_varcontent(&self, input: &str) -> Result<VarContent, ()> {
+        let lexer = self.lexer.lexer(input);
+        let (res, errs) = varcontent_y::parse(&lexer);
+        match res {
+            Some(Ok(r)) => Ok(r),
+            _ => Err(())
+        }
+    }
+
+    pub fn parse_file(&self, file_name: &str) -> Result<Trace, ()> {
         let mut f = File::open(file_name).unwrap();
         let mut contents = String::new();
         f.read_to_string(&mut contents).unwrap();

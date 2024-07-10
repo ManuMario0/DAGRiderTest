@@ -12,3 +12,4 @@ lrpar = "0.13"
 cfgrammar = "0.13"
 lrlex = "0.13"
 lrpar = "0.13"
+arbitrary = { version = "1", features = ["derive"] }

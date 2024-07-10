@@ -1125,14 +1125,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test"
-version = "0.0.1"
-dependencies = [
- "fuzzer",
- "tokio",
-]
-
-[[package]]
 name = "thiserror"
 version = "1.0.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"

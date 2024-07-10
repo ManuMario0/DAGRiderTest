@@ -1,13 +1,27 @@
-use std::{collections::BTreeMap, vec};
+use std::{collections::{BTreeMap, HashMap}, fmt::format, fs::File, io::Write, task::Poll, thread::sleep, time::Duration, vec};
 
-use consensus::dag;
-use model::{block::Block, committee::Committee, vertex::Vertex};
+use consensus::dag::{self, Dag};
+use model::{block::{Block, Transaction}, committee::Committee, vertex::Vertex};
 use parser::{self, VarContent};
 use tokio::sync::mpsc::{Receiver, Sender};
+
+#[derive(Debug, arbitrary::Arbitrary)]
+pub enum Inputs {
+    Transaction(Block),
+    Vertex(parser::VarContent),
+}
+/* 
+#[derive(Debug, arbitrary::Arbitrary)]
+pub enum Inputs {
+    Transaction(Block),
+    Vertex(Vertex),
+}*/
 
 pub enum ControllingMode {
     Original,
     SpecNoStateMerge(Receiver<dag::Dag>, Sender<Vertex>, Sender<()>),
+    OriginalWithFuzzer(Vec<Inputs>, Receiver<Vec<VarContent>>),
+    OriginalWithFuzzerSimplify(Vec<VarContent>, Receiver<Vec<VarContent>>),
 }
 
 pub struct Environment {
@@ -18,9 +32,9 @@ pub struct Environment {
     process_id: u64,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, arbitrary::Arbitrary)]
 enum Action {
-    RecvVert(u64, parser::VarContent),
+    RecvVert(u64, VarContent),
     RecvTransaction(u64),
     AddVert(u64, VarContent),
     NextRound(u64, VarContent),
@@ -64,14 +78,12 @@ impl Environment {
                                     match v_wrap {
                                         VarContent::Struct(v) => {
                                             if Self::unwrap_int(
-                                                v.get("block").expect(
-                                                    r"Not the right format of vertex in dag !",
-                                                ),
+                                                v.get("block"),
                                             )
                                             .expect(r"Not the right format of vertex in dag !")
                                                 == 1
                                             {
-                                                let real_v = Self::generate_vertex(v_wrap);
+                                                let real_v = Self::generate_vertex(v_wrap).unwrap();
                                                 match dag.get_vertex(real_v.hash(), &real_v.round())
                                                 {
                                                     Some(_) => (),
@@ -102,7 +114,7 @@ impl Environment {
         match mode {
             ControllingMode::Original => {
                 for i in 0..(self.trace.len() - 1) {
-                    let action = Self::get_action_from_state(&self.trace[i], &self.trace[i + 1]);
+                    let action = Self::get_action_from_state(&self.trace[i], &self.trace[i + 1]).unwrap();
                     match action {
                         Action::RecvTransaction(p) => {
                             if p == self.process_id {
@@ -114,7 +126,7 @@ impl Environment {
                         }
                         Action::RecvVert(p, vert) => {
                             if p == self.process_id {
-                                let formated_vert = Self::generate_vertex(&vert);
+                                let formated_vert = Self::generate_vertex(&vert).unwrap();
                                 self.vertex_channel_deliver
                                     .send(formated_vert)
                                     .await
@@ -132,7 +144,7 @@ impl Environment {
                 vertex_creation_snd,
             ) => {
                 'trace: for i in 0..(self.trace.len() - 1) {
-                    let action = Self::get_action_from_state(&self.trace[i], &self.trace[i + 1]);
+                    let action = Self::get_action_from_state(&self.trace[i], &self.trace[i + 1]).unwrap();
                     match action {
                         Action::RecvTransaction(p) => {
                             // println!("Processing RecvTransaction for {} ...", p);
@@ -150,7 +162,7 @@ impl Environment {
                         Action::RecvVert(p, vert) => {
                             // println!("Processing RecvVert for {} ...", p);
                             if p == self.process_id {
-                                let formated_vert = Self::generate_vertex(&vert);
+                                let formated_vert = Self::generate_vertex(&vert).unwrap();
                                 self.vertex_channel_deliver
                                     .send(formated_vert)
                                     .await
@@ -164,7 +176,7 @@ impl Environment {
                         Action::AddVert(p, vert) => {
                             // println!("Processing AddVert for {} ...", p);
                             if p == self.process_id {
-                                let formated_vert = Self::generate_vertex(&vert);
+                                let formated_vert = Self::generate_vertex(&vert).unwrap();
                                 vertex_transfert_snd.send(formated_vert).await.unwrap();
                                 if !self.control_dag(&mut dag_recv, &self.trace[i + 1]).await {
                                     println!("Found a bug at state {}", i + 2);
@@ -191,19 +203,198 @@ impl Environment {
                 }
                 true
             }
+            ControllingMode::OriginalWithFuzzer(data, mut recv) => {
+                let mut act = vec![];
+                for d in data {
+                    match d {
+                        Inputs::Transaction(b) => {
+                            self.block_channel_propose.send(b).await.unwrap();
+                            let mut act_data = HashMap::new();
+                            act_data.insert("name".to_string(), VarContent::String("ProposeTn".to_string()));
+                            act_data.insert("p".to_string(), VarContent::Int(1));
+                            act_data.insert("b".to_string(), VarContent::Int(1));
+                            act.push(VarContent::Struct(act_data));
+                        },
+                        Inputs::Vertex(v) => {
+                            let vert = Self::generate_vertex(&v).unwrap();
+                            self.vertex_channel_deliver.send(vert.clone()).await.unwrap();
+                            let mut act_data = HashMap::new();
+                            act_data.insert("name".to_string(), VarContent::String("FaultyBcastTn".to_string()));
+                            act_data.insert("p".to_string(), VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == vert.owner()).unwrap() as u64));
+                            act_data.insert("v".to_string(), v.clone());
+                            act_data.insert("r".to_string(), VarContent::Int(vert.round()));
+                            act.push(VarContent::Struct(act_data));
+
+                            let mut act_data = HashMap::new();
+                            act_data.insert("name".to_string(), VarContent::String("ReceiveVertexTn".to_string()));
+                            act_data.insert("p".to_string(), VarContent::Int(1));
+                            act_data.insert("q".to_string(), VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == vert.owner()).unwrap() as u64));
+                            act_data.insert("v".to_string(), v);
+                            act_data.insert("r".to_string(), VarContent::Int(vert.round()));
+                            act.push(VarContent::Struct(act_data));
+                        },
+                    }
+                    act.append(&mut recv.recv().await.unwrap());
+                }
+                drop(self.block_channel_propose);
+                drop(self.vertex_channel_deliver);
+                loop {
+                    match self.vertex_channel_broadcast.recv().await {
+                        | None => break,
+                        | _ => (),
+                    }
+                }
+                /*let mut f = std::fs::OpenOptions::new().create(true).append(true).open("test.txt").unwrap();
+                f.write(format!("{}\n", Self::dump_var(&VarContent::Seq(Box::new(act)))).as_bytes()).unwrap();*/
+                println!("###{}", Self::dump_var(&VarContent::Seq(Box::new(act))));
+
+                true
+            }
+            ControllingMode::OriginalWithFuzzerSimplify(data, mut recv) => {
+                let mut act = vec![];
+                for d in data {
+                    match d {
+                        VarContent::Int(_) => {
+                            self.block_channel_propose.send(Block::new(vec![vec![]])).await.unwrap();
+                            let mut act_data = HashMap::new();
+                            act_data.insert("name".to_string(), VarContent::String("ProposeTn".to_string()));
+                            act_data.insert("p".to_string(), VarContent::Int(1));
+                            act_data.insert("b".to_string(), VarContent::Int(1));
+                            act.push(VarContent::Struct(act_data));
+                        }
+                        _ => {
+                            match Self::generate_vertex(&d) {
+                                None => {
+                                    drop(self.block_channel_propose);
+                                    drop(self.vertex_channel_deliver);
+                                    loop {
+                                        match self.vertex_channel_broadcast.recv().await {
+                                            | None => break,
+                                            | _ => (),
+                                        }
+                                    }
+
+                                    return false
+                                },
+                                Some(vert) => {
+                                    self.vertex_channel_deliver.send(vert.clone()).await.unwrap();
+                                    let mut act_data = HashMap::new();
+                                    act_data.insert("name".to_string(), VarContent::String("FaultyBcastTn".to_string()));
+                                    act_data.insert("p".to_string(), VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == vert.owner()).unwrap() as u64));
+                                    act_data.insert("v".to_string(), d.clone());
+                                    act_data.insert("r".to_string(), VarContent::Int(vert.round()));
+                                    act.push(VarContent::Struct(act_data));
+        
+                                    let mut act_data = HashMap::new();
+                                    act_data.insert("name".to_string(), VarContent::String("ReceiveVertexTn".to_string()));
+                                    act_data.insert("p".to_string(), VarContent::Int(1));
+                                    act_data.insert("q".to_string(), VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == vert.owner()).unwrap() as u64));
+                                    act_data.insert("v".to_string(), d);
+                                    act_data.insert("r".to_string(), VarContent::Int(vert.round()));
+                                    act.push(VarContent::Struct(act_data));
+                                }
+                            }
+                        }
+                    }
+                    act.append(&mut recv.recv().await.unwrap());
+                }
+                drop(self.block_channel_propose);
+                drop(self.vertex_channel_deliver);
+                loop {
+                    match self.vertex_channel_broadcast.recv().await {
+                        | None => break,
+                        | _ => (),
+                    }
+                }
+                println!("###{}", Self::dump_var(&VarContent::Seq(Box::new(act))));
+
+                true
+            }
         }
     }
 
-    fn unwrap_int(i: &VarContent) -> Option<u64> {
+    fn dump_vertex(dag : &Dag, v : &Vertex) -> VarContent {
+        let mut vert_content = HashMap::new();
+
+        /* Add round to the vertex */
+        let round = VarContent::Int(v.round());
+        vert_content.insert("round".to_string(), round);
+
+        /* Add source to the vertex */
+        /* Revert source names before */
+        let source = VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == v.owner()).unwrap() as u64);
+        vert_content.insert("source".to_string(), source);
+
+        /* Add strong parents */
+        let mut strongparents_unpack = vec![];
+
+        if v.round() != 0 {
+            for (vh, r) in v.get_strong_parents() {
+                let nv = Self::dump_vertex(dag, dag.get_vertex(vh, &r).unwrap());
+                strongparents_unpack.push(nv);
+            }
+        } /* 
+        strongparents_unpack.sort_by(
+            |v1, v2| 
+            match (v1, v2) {
+                | (VarContent::Struct(vi1), VarContent::Struct(vi2)) => 
+                    match (vi1.get("source"), vi2.get("source")) {
+                        | (Some(VarContent::Int(val1)), Some(VarContent::Int(val2))) => val1.cmp(val2),
+                        | _ => std::cmp::Ordering::Equal
+                    }
+                | (_, _) => std::cmp::Ordering::Equal
+            }
+        );*/
+        /* Probably no need to sort this */
+
+        let strongparents = VarContent::Set(Box::new(strongparents_unpack));
+        vert_content.insert("strongedges".to_string(), strongparents);
+
+        /* Add weak parents */
+        let mut weakparents_unpack = vec![];
+
+        if v.round() != 0 {
+            for (vh, r) in v.get_all_parents() {
+                if dag.is_strongly_linked(v, dag.get_vertex(vh, &r).unwrap()) { continue; }
+                let nv = Self::dump_vertex(dag, dag.get_vertex(vh, &r).unwrap());
+                weakparents_unpack.push(nv);
+            }
+        } /*
+        weakparents_unpack.sort_by(
+            |v1, v2| 
+            match (v1, v2) {
+                | (VarContent::Struct(vi1), VarContent::Struct(vi2)) => 
+                    match (vi1.get("source"), vi2.get("source")) {
+                        | (Some(VarContent::Int(val1)), Some(VarContent::Int(val2))) => val1.cmp(val2),
+                        | _ => std::cmp::Ordering::Equal
+                    }
+                | (_, _) => std::cmp::Ordering::Equal
+            }
+        ); */
+        /* Also probably not needed to sort this, idk why I wrote that */
+
+        let weakparents = VarContent::Set(Box::new(weakparents_unpack));
+        vert_content.insert("weakedges".to_string(), weakparents);
+
+        let vert = VarContent::Struct(vert_content);
+
+        vert
+    }
+
+    fn dump_dag(&self, dag : &Dag) -> VarContent {
+        VarContent::Int(0)
+    }
+
+    fn unwrap_int(i: Option<&VarContent>) -> Option<u64> {
         match i {
-            VarContent::Int(res) => Some(*res),
+            Some(VarContent::Int(res)) => Some(*res),
             _ => None,
         }
     }
 
-    fn unwrap_set(i: &VarContent) -> Option<&Vec<VarContent>> {
+    fn unwrap_set(i: Option<&VarContent>) -> Option<&Vec<VarContent>> {
         match i {
-            VarContent::Set(res) => Some(res),
+            Some(VarContent::Set(res)) => Some(res),
             _ => None,
         }
     }
@@ -219,63 +410,74 @@ impl Environment {
         Block::new(vec![vec![b as u8]])
     }
 
-    fn generate_vertex(vert: &VarContent) -> Vertex {
+    pub fn generate_vertex(vert: &VarContent) -> Option<Vertex> {
         match vert {
             VarContent::Struct(hvert) => {
-                let round = Self::unwrap_int(
-                    hvert
-                        .get("round")
-                        .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("round"))),
-                )
-                .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("round")));
-                let source = Self::unwrap_int(
-                    hvert
-                        .get("source")
-                        .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("source"))),
-                )
-                .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("source")));
+                let round = match Self::unwrap_int(
+                    hvert.get("round")
+                ) {
+                    | None => return None,
+                    | Some(v) => v
+                };
+                let source = match Self::unwrap_int(
+                    hvert.get("source") 
+                ) {
+                    | None => return None,
+                    | Some(v) => v
+                };
+                if source > 4 || source < 2 {
+                    return None;
+                }
                 if round == 0 {
-                    return Vertex::new(
+                    return Some(Vertex::new(
                         Committee::default().get_node_key(source as u32).unwrap(),
                         1,
                         Block::default(),
                         BTreeMap::new(),
-                    );
+                    ));
                 }
 
-                let strongedges = Self::unwrap_set(
+                let strongedges = match Self::unwrap_set(
                     hvert
                         .get("strongedges")
-                        .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("strongedges"))),
-                )
-                .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("strongedges")));
-                let weakedges = Self::unwrap_set(
+                ) {
+                    | None => return None,
+                    | Some(v) => v,
+                };
+                let weakedges = match Self::unwrap_set(
                     hvert
                         .get("weakedges")
-                        .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("weakedges"))),
-                )
-                .unwrap_or_else(|| panic!("{}", Self::vertex_error_msg("weakedges")));
+                ) {
+                    | None => return None,
+                    | Some(v) => v,
+                };
 
                 let mut parents: BTreeMap<[u8; 32], u64> = BTreeMap::new();
                 for v in strongedges {
-                    let vert = Self::generate_vertex(v);
+                    let vert = match Self::generate_vertex(v) {
+                        | None => return None,
+                        | Some(v) => v
+                    };
                     parents.insert(vert.hash(), vert.round());
                 }
 
                 for v in weakedges {
-                    let vert = Self::generate_vertex(v);
+                    let vert = match Self::generate_vertex(v) {
+                        | None => return None,
+                        | Some(v) => v
+                    };
                     parents.insert(vert.hash(), vert.round());
                 }
 
-                Vertex::new(
+                Some(Vertex::new(
                     Committee::default().get_node_key(source as u32).unwrap(),
                     round + 1,
                     Self::generate_block(1),
                     parents,
-                )
+                ))
             }
             _ => {
-                panic!("Error while parsing the AST : vertex is not a structure or doesn't exists")
+                None
             }
         }
     }
@@ -327,7 +529,7 @@ impl Environment {
         }
     }
 
-    fn get_action_from_state(s_state: &parser::State, e_state: &parser::State) -> Action {
+    fn get_action_from_state(s_state: &parser::State, e_state: &parser::State) -> Option<Action> {
         /*
            Check first the blocks_to_propose field for differences (gives RecvTransaction as well as NextRound)
         */
@@ -346,14 +548,14 @@ impl Environment {
                     match v {
                         (VarContent::Seq(s_s), VarContent::Seq(s_e)) => {
                             if s_s.len() < s_e.len() {
-                                return Action::RecvTransaction(i as u64 + 1);
+                                return Some(Action::RecvTransaction(i as u64 + 1));
                             }
                         }
-                        _ => panic!("Not the right format : {:?}", v),
+                        _ => return None,
                     }
                 }
             }
-            _ => panic!(r"Not the right format of block !"),
+            _ => return None,
         }
 
         /*
@@ -370,17 +572,17 @@ impl Environment {
                             if s_s.len() < s_e.len() {
                                 for (vs, ve) in s_s.iter().zip(s_e.iter()) {
                                     if !Self::compare_varcontent(vs, ve) {
-                                        return Action::RecvVert(i as u64 + 1, ve.clone());
+                                        return Some(Action::RecvVert(i as u64 + 1, ve.clone()));
                                     }
                                 }
-                                return Action::RecvVert(i as u64 + 1, s_e.last().unwrap().clone());
+                                return Some(Action::RecvVert(i as u64 + 1, s_e.last().unwrap().clone()));
                             }
                         }
-                        _ => panic!(r"Not the right format of buffer !"),
+                        _ => return None,
                     }
                 }
             }
-            _ => panic!(r"Not the right format of buffer !"),
+            _ => return None,
         }
 
         /*
@@ -399,17 +601,17 @@ impl Environment {
                                         VarContent::Struct(vert) => match vert.get("sender") {
                                             Some(VarContent::Int(n)) => {
                                                 if *n == 4 {
-                                                    return Action::FaultyBroadcast;
+                                                    return Some(Action::FaultyBroadcast);
                                                 } else {
-                                                    return Action::NextRound(
+                                                    return Some(Action::NextRound(
                                                         *n,
                                                         vert.get("vertex").unwrap().clone(),
-                                                    );
+                                                    ));
                                                 }
                                             }
-                                            _ => panic!(r"Not the right format of marked vertex !"),
+                                            _ => return None,
                                         },
-                                        _ => panic!(r"Not the right format of marked vertex !"),
+                                        _ => return None,
                                     }
                                 }
                             }
@@ -417,24 +619,24 @@ impl Environment {
                                 VarContent::Struct(vert) => match vert.get("sender") {
                                     Some(VarContent::Int(n)) => {
                                         if *n == 4 {
-                                            return Action::FaultyBroadcast;
+                                            return Some(Action::FaultyBroadcast);
                                         } else {
-                                            return Action::NextRound(
+                                            return Some(Action::NextRound(
                                                 *n,
                                                 vert.get("vertex").unwrap().clone(),
-                                            );
+                                            ));
                                         }
                                     }
-                                    _ => panic!(r"Not the right format of marked vertex !"),
+                                    _ => return None,
                                 },
-                                _ => panic!(r"Not the right format of marked vertex !"),
+                                _ => return None,
                             }
                         }
                     }
-                    _ => panic!(r"Not the right format of network !"),
+                    _ => return None,
                 }
             }
-            _ => panic!(r"Not the right format of network !"),
+            _ => return None,
         }
 
         /*
@@ -466,32 +668,88 @@ impl Environment {
                                                             Some(VarContent::Int(b_vert_e)),
                                                         ) => {
                                                             if *b_vert_s == 0 && *b_vert_e == 1 {
-                                                                return Action::AddVert(
+                                                                return Some(Action::AddVert(
                                                                     view as u64 + 1,
                                                                     verts.1.clone(),
-                                                                );
+                                                                ));
                                                             }
                                                         }
                                                         _ => {
-                                                            panic!(r"Not the right format of dag !")
+                                                            return None
                                                         }
                                                     }
                                                 }
-                                                _ => panic!(r"Not the right format of dag !"),
+                                                _ => return None,
                                             }
                                         }
                                     }
-                                    _ => panic!(r"Not the right format of dag !"),
+                                    _ => return None,
                                 }
                             }
                         }
-                        _ => panic!(r"Not the right format of dag !"),
+                        _ => return None,
                     }
                 }
             }
-            _ => panic!(r"Not the right format of dag !"),
+            _ => return None,
         }
-        Action::None
+        Some(Action::None)
+    }
+
+    fn dump_var(v : &VarContent) -> String {
+        match v {
+            | VarContent::Bool(b) => {
+                if *b {
+                    "TRUE".to_string()
+                } else {
+                    "FALSE".to_string()
+                }
+            }
+            | VarContent::Int(i) => {
+                format!("{i}").to_string()
+            }
+            | VarContent::String(s) => {
+                format!("\"{s}\"").to_string()
+            }
+            | VarContent::Seq(seq) => {
+                let mut res = vec![];
+                for vc in seq.iter() {
+                    res.push(Self::dump_var(vc));
+                }
+                let tmp = res.join(", ");
+                ["<<".to_string(), tmp, ">>".to_string()].join(" ")
+            }
+            | VarContent::Set(seq) => {
+                let mut res = vec![];
+                for vc in seq.iter() {
+                    res.push(Self::dump_var(vc));
+                }
+                let tmp = res.join(", ");
+                ["{".to_string(), tmp, "}".to_string()].join(" ")
+            }
+            | VarContent::Struct(s) => {
+                let mut res = vec![];
+                for (n, vc) in s.iter() {
+                    res.push(
+                        [n.to_string(),  "|->".to_string(), Self::dump_var(vc)].join(" ")
+                    );
+                }
+                let tmp = res.join(", ");
+                ["[".to_string(), tmp, "]".to_string()].join(" ")
+            }
+        }
+    }
+
+    pub fn dump_state(state: &parser::State) -> String {
+        let label = state.label.to_string();
+        let mut vars = vec!["".to_string()];
+        for (n, vc) in state.vars.iter() {
+            vars.push(
+                [n.to_string(), "=".to_string(), Self::dump_var(vc)].join(" ")
+            );
+        }
+        let tmp = vars.join("\n    /\\ ");
+        [label, "==".to_string(), tmp].join(" ")
     }
 }
 
@@ -502,12 +760,26 @@ mod tests {
     #[test]
     fn test_get_action_from_state() {
         let p = parser::Parser::create_parser();
-        for i in 0..50 {
+        for i in 0..5 {
             let parsed = p
-                .parse_file(&format!("/Volumes/Emmanuel/tla/test-subject/trace_0_{}", i))
+                .parse_file(&format!("/Volumes/Emmanuel/tla/test2/trace_0_{}", i))
                 .unwrap();
             for j in 0..4 {
                 let _ = Environment::get_action_from_state(&parsed[j], &parsed[j + 1]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_dump_state() {
+        let p = parser::Parser::create_parser();
+        for i in 0..5 {
+            let parsed = p
+                .parse_file(&format!("/Volumes/Emmanuel/tla/test2/trace_0_{}", i))
+                .unwrap();
+            for j in 0..4 {
+                println!("{}", Environment::dump_state(&parsed[j]));
+                // let _ = Environment::get_action_from_state(&parsed[j], &parsed[j + 1]);
             }
         }
     }

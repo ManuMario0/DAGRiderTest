@@ -1,0 +1,1 @@
+<< [ name |-> "ProposeTn", b |-> 1, p |-> 1 ], [ p |-> 1, name |-> "NextRoundTn" ] >>

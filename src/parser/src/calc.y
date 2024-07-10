@@ -91,13 +91,16 @@ Label -> Result<String, ()>:
 
 use std::collections::HashMap;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+use crate::{Trace, State, Var, VarContent};
+/*
+#[derive(Debug, PartialEq, Eq, Clone, arbitrary::Arbitrary)]
 pub enum VarContent {
     Set(Box<Vec<VarContent>>),
     Seq(Box<Vec<VarContent>>),
     Int(u64),
     Struct(HashMap<String, VarContent>),
     Bool(bool),
+	String(String),
 }
 
 #[derive(Debug)]
@@ -112,7 +115,7 @@ pub struct State {
     pub vars: HashMap<String, VarContent>,
 }
 
-pub type Trace = Vec<State>;
+pub type Trace = Vec<State>;*/
 
 fn parse_int(s: &str) -> Result<u64, ()> {
     match s.parse::<u64>() {

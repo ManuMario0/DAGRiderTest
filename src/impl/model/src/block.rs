@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 pub type Transaction = Vec<u8>;
 pub type BlockHash = [u8; 32];
 
-#[derive(Clone, Serialize, Deserialize, Default, Debug)]
+#[derive(Clone, Serialize, Deserialize, Default, Debug, arbitrary::Arbitrary)]
 pub struct Block {
     pub hash: BlockHash,
     pub transactions: Vec<Transaction>,

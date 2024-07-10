@@ -1,0 +1,13 @@
+[package]
+name = "fuzzer"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+model = { path = "../impl/model" }
+vertex = { path = "../impl/vertex" }
+consensus = { path = "../impl/consensus" }
+parser = { path = "../parser" }
+tokio = { version = "1.5.0", features = ["full"] }
+indicatif = "0.17.8"
+arbitrary = { version = "1", features = ["derive"] }

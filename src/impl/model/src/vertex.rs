@@ -7,7 +7,7 @@ use std::fmt;
 
 pub type VertexHash = [u8; 32];
 
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default, arbitrary::Arbitrary)]
 pub struct Vertex {
     /// Vertex unique identifier
     hash: VertexHash,

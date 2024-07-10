@@ -7,6 +7,7 @@ edition = "2021"
 tokio = { version = "1.5.0", features = ["sync"] }
 log = "0.4.14"
 model = { path = "../model" }
+parser = { path = "../../parser" }
 
 [dev-dependencies]
 rand = "0.7.3"

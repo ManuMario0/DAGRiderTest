@@ -2,12 +2,6 @@
 (* DAG-Rider protocol, and its safety properties. The article for the      *)
 (* protocol can be found here:   https://arxiv.org/abs/2102.08325          *)
 
-(*
-
-This spec is a spec where we stay as close as possible to Pranav spec
-
-*)
-
 ------------------------ MODULE DAGRider -----------------------
 
 EXTENDS FiniteSets,
@@ -36,10 +30,18 @@ f ==
 ProcessorSet == 
    1..NumProcessors
 
-(*
+History == 0
+
 ASSUME ProcSetAsm == 
-   "History" \notin ProcessorSet
-*)
+   History \notin ProcessorSet
+
+CONSTANT setAct
+
+VARIABLE act
+
+InitAct ==
+    act \in setAct
+
 -----------------------------------------------------------------------------
 
 (* NumWaves is the number of waves after which the protocol will stop, we  *)
@@ -58,10 +60,10 @@ WaveSet ==
 RoundSet == 
    0..(4*NumWaves)
 
-(*
+
 LEMMA NonEmptyWaves == WaveSet # {}
       BY NumWaveAsm DEF WaveSet
-*)
+
 -----------------------------------------------------------------------------
 
 (* BlockSet is a set of blocks that can be proposed by participating proc- *)
@@ -86,22 +88,17 @@ CONSTANT ChooseLeader(_)
 (* but a rooted DAG (aka. downset). The downset stores the entire causal   *)
 (* history of the node.                                                    *) 
 
-(* We alpha rename "Empty" -> 1 for type consistency *)
+Empty == 1
+
 ZeroRoundVertex(p) == 
    [round |-> 0, 
     source |-> p, 
-    block |-> 1, 
+    block |-> Empty, 
     strongedges |-> {}, 
     weakedges |-> {}]
-
+(*
 ZeroRoundVertexSet == 
    {ZeroRoundVertex(p) : p \in ProcessorSet}
-
-(*
-This set will be too big even for lighter model checking -> addapt it
-Status : Done
-Remark : not used anymore
-*)
 
 RECURSIVE UntilRoundVertex(_)
 
@@ -112,13 +109,11 @@ UntilRoundVertex(r) ==
                                    source : ProcessorSet, 
                                    block : BlockSet, 
                                    strongedges : SUBSET(UntilRoundVertex(r-1)),
-                                   weakedges : SUBSET(UntilRoundVertex(r-1))] 
+                                   weakedges : SUBSET(UntilRoundVertex(r-1))]  
 
-(*VertexSet == UntilRoundVertex(4*NumWaves)*)
+VertexSet == UntilRoundVertex(4*NumWaves)*)
 
-(* We replace the "\in vertexset" check with a check to zero as we handle blocks differently *)
-InVertexSet(v) ==
-    v.block # 0
+CONSTANT VertexSet
 
 -----------------------------------------------------------------------------
 
@@ -138,12 +133,12 @@ TaggedVertexSet ==
 (* by process p in round r in this case we assume that it has a Nil-       *)
 (* Vertex(p, r).  We define NilVertexSet as the set of all nil vertices.   *)
 
-(* We alpha rename "Nil" -> 0 for type consistency *)
+Nil == 0
 
 NilVertex(p, r) == 
    [round |-> r,
     source |-> p,
-    block |-> 0,
+    block |-> Nil,
     strongedges |-> {},
     weakedges |-> {}]
 
@@ -176,20 +171,11 @@ VARIABLE broadcastNetwork
 (*
 BroadcastNetworkType == 
    broadcastNetwork \in [ProcessorSet \cup 
-                         {"History"} ->SUBSET(TaggedVertexSet)]
-*)
+                         {"History"} ->SUBSET(TaggedVertexSet)]*)
 
 (* Note P8.Network : remove the history from the network, unnecessary for simulation *)
-(*
-    Status : Done
-    Remark : it is not necessary to remove the history as
-             it will be usefull for the generation of packets
-             of the byzentine nodes
-             alpha rename "History" -> 0 for type consistency
-             
-*)
 InitBroadcastNetwork == 
-   broadcastNetwork = [p \in ProcessorSet \cup {0} |-> {}]
+   broadcastNetwork = [p \in ProcessorSet \cup {History} |-> {}]
 
 -----------------------------------------------------------------------------
 
@@ -228,8 +214,7 @@ VARIABLE dag
 (*
 DagType == 
    dag \in [ProcessorSet -> 
-      [RoundSet  -> [ProcessorSet -> VertexSet \cup NilVertexSet]]]
-*)
+      [RoundSet  -> [ProcessorSet -> VertexSet \cup NilVertexSet]]]*)
 
 InitDag == 
    dag = [p \in ProcessorSet |-> 
@@ -253,44 +238,41 @@ InitRound ==
 
 -----------------------------------------------------------------------------
 
-VARIABLE faultyProcess
+VARIABLE faulty
 
 FaultyType == 
-    faultyProcess \in SUBSET(ProcessorSet)
+    faulty \in SUBSET(ProcessorSet)
 
 (* Note P3.Faulty : Preset the faulty to the correct set *)
-(* Status : Done *)
-InitFaultyProcess ==
-    faultyProcess = (NumProcessors-f+1)..NumProcessors
+(*
+InitFaulty ==
+    faulty = {1}*)
 -----------------------------------------------------------------------------
 
 (* Since DAGRiderSpecification extends LeaderConsensusSpecification, we    *)
 (* additionally have the four variables (commitWithRef, decidedWave,       *)
 (* leaderReachablity, leaderSeq) from the LeaderConsensusSpecification.    *)
 
-
-VARIABLES
-    decidedWave,
-    leaderReachablity,
-    leaderSeq,
-    commitWithRef,
-    faulty
+VARIABLE commitWithRef, 
+         decidedWave,
+         leaderReachablity,
+         leaderSeq
 
 -----------------------------------------------------------------------------
 
-(*
 LeaderConsensus == 
    INSTANCE LeaderConsensusSpecification
    WITH NumWaves <- NumWaves,
         NumProcessors <- NumProcessors,
         f <- f,
+        commitWithRef <- commitWithRef,
         decidedWave <- decidedWave,
         leaderReachablity <- leaderReachablity,
         leaderSeq <- leaderSeq,
-        commitWithRef <- commitWithRef,
-        faulty <- faultyLC*)
+        faulty <- faulty
+        (*
 LeaderConsensus ==
-    INSTANCE LeaderConsensusSpecification
+    INSTANCE LeaderConsensusSpecification*)
 
 -----------------------------------------------------------------------------
 (*-------------------------STATE-TRANSITIONS-------------------------------*)
@@ -326,29 +308,12 @@ StrongPath(u, v) ==
         THEN FALSE
         ELSE \E x \in u.strongedges : StrongPath(x, v)
 
-(* Note P7.D1.Vertex : rebuilt those sets in a smarter way ... *)
-(* Status : Done *)
 InAddedVertex(p, r) == 
-   {v \in { dag[p][r][src] : src \in ProcessorSet } : v.block # 0}
-   (*{v \in VertexSet : v.round = r /\ dag[p][r][v.source] = v}*)
+   {v \in VertexSet : v.round = r /\ dag[p][r][v.source] = v}
 
-UntilAddedVertex(p, r) == 
-    {v \in { dag[p][v.round][v.source] :
-        v \in [
-            round : 0..r,
-            source : ProcessorSet
-        ]
-    } : v.block # 0}
-    (*{v \in VertexSet : v.round <= r /\ dag[p][v.round][v.source] = v}*)
+UntilAddedVertex(p, r) == {v \in VertexSet : v.round <= r /\ dag[p][v.round][v.source] = v}
 
-AddedVertices(p) == 
-    {v \in { dag[p][v.round][v.source] :
-        v \in [
-            round : RoundSet,
-            source : ProcessorSet
-        ]
-    } : v.block # 0}
-    (*{v \in VertexSet : dag[p][v.round][v.source] = v}*)
+AddedVertices(p) == {v \in VertexSet : dag[p][v.round][v.source] = v}
 
 NoPathVertices(p, r) == {v \in UntilAddedVertex(p, r) : 
                          (\A w \in InAddedVertex(p, r) : ~Path(w,v))}                         
@@ -358,14 +323,11 @@ WaveLeader(p, w) == dag[p][4*w-3][ChooseLeader(w)]
 -----------------------------------------------------------------------------
 
 (* Note P9.Faulty : remove this tranition as we don't want a in-flight fault in the tests *)
-(*
-    Status : Done
-    Remark : not deleted here, deleted in the next statment
-*)
+
 ProcessFailureTn(p) == 
-  /\ Cardinality(faultyProcess) < f
-  /\ p \notin faultyProcess
-  /\ faultyProcess' = faultyProcess \cup {p}
+  /\ Cardinality(faulty) < f
+  /\ p \notin faulty
+  /\ faulty' = faulty \cup {p}
   /\ LeaderConsensus!ProcessFailureTn(p)
   /\ UNCHANGED <<blocksToPropose, broadcastNetwork, broadcastRecord, buffer, dag, 
           round>>
@@ -376,14 +338,11 @@ ProcessFailureTn(p) ==
 
 (* Note P7.D3.Block : this function MIGHT need to be adapted. It depends on how I want to handle block proposal
 I could be the case that I want to keep this version of modeling but force the vertex creation when possible *)
-
-(* Status : Done
-   Remark : for next version, this one we want to keep it close to the original spec *)
 ProposeTn(p, b) == 
    /\ blocksToPropose' = [blocksToPropose EXCEPT 
          ![p] = Append(blocksToPropose[p], b)]
    /\ UNCHANGED <<commitWithRef, decidedWave, leaderReachablity, leaderSeq, faulty>>
-   /\ UNCHANGED <<broadcastNetwork, broadcastRecord, buffer, dag, round, faultyProcess>>
+   /\ UNCHANGED <<broadcastNetwork, broadcastRecord, buffer, dag, round>>
 
 -----------------------------------------------------------------------------
 
@@ -397,21 +356,20 @@ ProposeTn(p, b) ==
 CreateVertex(p, r) == 
    [round |-> r, 
     source |-> p, 
-    block |-> Head(blocksToPropose[p]),
+    block |-> Head(blocksToPropose[p]), 
     strongedges |-> InAddedVertex(p, r-1),
     weakedges |-> NoPathVertices(p, r-1)]
 
 Broadcast(p, r, v) == 
    IF broadcastRecord[p][r] = FALSE
    THEN /\ broadcastRecord' = [broadcastRecord EXCEPT ![p][r] = TRUE]
-        /\ broadcastNetwork' = [q \in ProcessorSet \cup {0} 
+        /\ broadcastNetwork' = [q \in ProcessorSet \cup {History} 
               |-> broadcastNetwork[q] \cup 
                   {[sender |-> p, inRound |-> r, vertex |-> v]}]
    ELSE UNCHANGED <<broadcastNetwork, broadcastRecord>>
 
 ReadyWave(p, w) == 
-   IF ( (*/\ WaveLeader(p, w) \in VertexSet *)
-        /\ InVertexSet(WaveLeader(p, w))
+   IF ( /\ WaveLeader(p, w) \in VertexSet 
         /\ \E Q \in SUBSET(InAddedVertex(p, 4*w)):
               /\ Cardinality(Q) > 2*f 
               /\ \A u \in Q : StrongPath(u, WaveLeader(p, w)) )
@@ -423,10 +381,6 @@ when possible ; idealy, merging it with the reception of a vertex as well as the
 the small difficutly might come from the network handling
 Another solution would to simply change the simulator to detect automatically this gap, and wait for
 the correct action to be triggered, but I don't want to do that at all *)
-(*
-    Status : Done
-    Remark : for next version, we will block the process for now
-*)
 NextRoundTn(p) ==  
    /\ round[p]+1 \in RoundSet
    /\ Cardinality(InAddedVertex(p, round[p])) > 2*f
@@ -438,7 +392,7 @@ NextRoundTn(p) ==
    /\ IF round[p]>0 /\ (round[p] % 4) = 0 
       THEN ReadyWave(p, (round[p] \div 4)) 
       ELSE UNCHANGED <<commitWithRef, decidedWave, leaderReachablity, leaderSeq, faulty>>
-   /\ UNCHANGED <<buffer, dag, faultyProcess>>
+   /\ UNCHANGED <<buffer, dag>>
 
 -----------------------------------------------------------------------------
 
@@ -447,15 +401,15 @@ NextRoundTn(p) ==
 
 ReceiveVertexTn(p, q, r, v) == 
    /\ [sender |-> q, inRound |-> r, vertex |-> v] \in broadcastNetwork[p]
-   /\ p \notin faultyProcess => v.source = q
-   /\ p \notin faultyProcess => v.round = r
-   /\ p \notin faultyProcess => Cardinality(v.strongedges) > 2*f
+   /\ p \notin faulty => v.source = q
+   /\ p \notin faulty => v.round = r
+   /\ p \notin faulty => Cardinality(v.strongedges) > 2*f
    /\ buffer' = [buffer EXCEPT ![p] = buffer[p] \cup {v}]
    /\ broadcastNetwork' = [broadcastNetwork EXCEPT 
          ![p] = broadcastNetwork[p] \ 
              {[sender |-> q, inRound |-> r, vertex |-> v]}]
    /\ UNCHANGED <<commitWithRef, decidedWave, leaderReachablity, leaderSeq, faulty>>
-   /\ UNCHANGED <<blocksToPropose, broadcastRecord, dag, round, faultyProcess>>
+   /\ UNCHANGED <<blocksToPropose, broadcastRecord, dag, round>>
 
 -----------------------------------------------------------------------------
 
@@ -468,41 +422,29 @@ ReceiveVertexTn(p, q, r, v) ==
 ReachableWaveLeaders(p, v) == 
    {w \in WaveSet : StrongPath(v, WaveLeader(p, w))}
 
-(* Note P9.D3.Vertex : remove the buffer and merge this action with the vertex reception,
-DEPENDS ON Note P9.D7.Propose *)
-(*
-    Status : Done
-    Remark : to check against the implementation
-             might be difficult to enforce the block to be processed,
-             as it would require quite a big modification of the 
-             implementation, whereas modifying the spec does not impact
-             it too much here as it only requires to choose a set of
-             vertices to add instead of only one
-             + it is possible by simply adding a small condition, which does
-               not modify the code too much
-*)
 AddVertexTn(p, v) == 
    /\ v \in buffer[p]
-   /\ p \notin faultyProcess => v.round <= round[p]
-   /\ p \notin faultyProcess => dag[p][v.round][v.source] = NilVertex(v.source, v.round)
-   /\ p \notin faultyProcess => \A _v \in v.strongedges \cup v.weakedges : _v \in InAddedVertex(p, v.round -1)
+   /\ p \notin faulty => v.round <= round[p]
+   /\ p \notin faulty => dag[p][v.round][v.source] = NilVertex(v.source, v.round)
+   /\ p \notin faulty => v.edges \in InAddedVertex(p, v.round -1)
    /\ dag'= [dag EXCEPT ![p][v.round][v.source] = v]
-   /\ IF p \notin faultyProcess THEN 
+   /\ IF p \notin faulty THEN 
         IF v.round % 4 = 1 /\ v.source = ChooseLeader((v.round \div 4)+1) 
         THEN LeaderConsensus!UpdateWaveTn(p, 
              (v.round \div 4)+1, ReachableWaveLeaders(p, v)) 
         ELSE UNCHANGED <<commitWithRef, decidedWave, leaderReachablity, leaderSeq, faulty>>
       ELSE UNCHANGED <<commitWithRef, decidedWave, leaderReachablity, leaderSeq, faulty>>
    /\ UNCHANGED <<blocksToPropose, broadcastNetwork, 
-                  broadcastRecord, buffer, round, faultyProcess>>
+                  broadcastRecord, buffer, round>>
 
 -----------------------------------------------------------------------------
 
 FaultyBcastTn(p ,v, r) ==
-   /\ p \in faultyProcess
+   /\ p \in faulty
    /\ Broadcast(p, r, v)
    /\ UNCHANGED <<commitWithRef, decidedWave, leaderReachablity, leaderSeq, faulty>>
-   /\ UNCHANGED <<blocksToPropose, buffer, dag, round, faultyProcess>>
+   /\ UNCHANGED <<blocksToPropose, buffer, dag, round>>
+
 
 (*--------------------------TRANSITION-SYSTEM------------------------------*)
 
@@ -527,49 +469,10 @@ Init ==
    /\ InitBuffer
    /\ InitDag
    /\ InitRound
-   /\ InitFaultyProcess
    /\ LeaderConsensus!Init
-
-(* Note P8.D2.Vertex : change the vertex set to a smaller set of vertex, 
-i.e. for ReceiveVertexTn and RecvVertex *)
+   /\ InitAct
 (*
-    Remark : We want to remove the vertex set in a smart way, 
-             for now not restraining the possible vertex emmitable 
-             but without listing all the vertices as it is possible
-             to guess the vertex
-             Also, we only commit vertices with a block labelled "1"
-             for easier generation
-             Finally, we decouple the existentials to limit the size
-             of the searching space
-             + for the RecvVertexTn, the set of vertex possible to recv
-               is reduced to the network buffer (as expressed in the condition
-               of activation of the action), therefore, only looking in the 
-               network buffer does not change the specification
-             + for AddVertexTn, it is only possible to add vertex
-               already in the buffer
-             + for the faulty, we can add vertices to any vertex in an
-               existing dag, that is, anything in the history of the network
-*)
-Next ==
-    \/ \E p \in ProcessorSet: 
-        ProposeTn(p, 1)
-    \/ \E p \in ProcessorSet:
-        NextRoundTn(p)
-    \/ \E contener \in UNION { [p : { p }, v_ext : broadcastNetwork[p]] : p \in ProcessorSet}:
-        ReceiveVertexTn(contener.p, contener.v_ext.sender, contener.v_ext.inRound, contener.v_ext.vertex)
-    \/ \E contener \in UNION { [p : { p }, v : buffer[p] ] : p \in ProcessorSet}:
-        AddVertexTn(contener.p, contener.v)
-    \/ \E p \in ProcessorSet:
-        ProcessFailureTn(p)
-    \/ Cardinality(broadcastNetwork[0]) < 4 /\
-        \E v \in [ 
-            round: RoundSet, 
-            source: faultyProcess, 
-            block: {1}, 
-            strongedges: SUBSET ({p.vertex : p \in broadcastNetwork[0]} \cup ZeroRoundVertexSet), 
-            weakedges: SUBSET ({p.vertex : p \in broadcastNetwork[0]} \cup ZeroRoundVertexSet) ] :
-            FaultyBcastTn(v.source, v, v.round)
-(*
+Next == 
    \E p \in ProcessorSet, r \in RoundSet, v \in VertexSet, b \in BlockSet: 
       \E q \in ProcessorSet\{p}: 
          \/ ProposeTn(p, b)
@@ -577,14 +480,34 @@ Next ==
          \/ ReceiveVertexTn(p, q, r, v)
          \/ AddVertexTn(p, v)
          \/ ProcessFailureTn(p)
-         \/ FaultyBcastTn(p ,v, r)
-*)
-(*
-Inv == \A p \in ProcessorSet, r \in RoundSet, q \in ProcessorSet : Cardinality(dag[p][r][q].strongedges) = 0
+         \/ FaultyBcastTn(p ,v, r)*)
+
+Next ==
+    IF act = <<>> THEN 
+        UNCHANGED  <<blocksToPropose, broadcastNetwork, broadcastRecord, buffer, dag, 
+          round, faulty, decidedWave, leaderReachablity, leaderSeq, commitWithRef, act>>
+    ELSE
+    /\ act' = Tail(act)
+    /\ \/ (
+            /\ Head(act).name = "FaultyBcastTn" 
+            /\ FaultyBcastTn(Head(act).p, Head(act).v, Head(act).r)
+          )
+       \/ (
+            /\ Head(act).name = "ProposeTn"
+            /\ ProposeTn(Head(act).p, Head(act).b)
+          )
+       \/ (
+            /\ Head(act).name = "NextRoundTn"
+            /\ NextRoundTn(Head(act).p)
+          )
+       \/ (
+            /\ Head(act).name = "ReceiveVertexTn"
+            /\ ReceiveVertexTn(Head(act).p, Head(act).q, Head(act).r, Head(act).v)
+          )
 
 vars == <<blocksToPropose, broadcastNetwork, broadcastRecord, buffer, dag, 
-          round, faultyProcess, decidedWave, leaderReachablity, leaderSeq, faulty, commitWithRef>>
+          round, faulty, decidedWave, leaderReachablity, leaderSeq, commitWithRef>>
 
-Spec == Init /\ [][Next]_vars*)
+Spec == Init /\ [][Next]_vars
 
 =============================================================================
