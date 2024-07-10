@@ -3,38 +3,6 @@
 (* protocol can be found here:   https://arxiv.org/abs/2102.08325          *)
 
 (*
-
-Ideas :
-- Don't get me wrong, I don't want to do that, but it might be possible to
-    write a rust code that actually simulate with a real network running,
-    I'll see if I want to do it, I really don't but could be fun anyway
-
-Still debating with myself :
-- Do I merge transitions for easier conformance with the implementation ?
-    Pros:
-    - Reduce traces length 
-        (i.e. can go deeper into the simulation for the same cost of computation)
-    - Easier addaptation of the simulator 
-        (one-to-one mapping of the actions, no delayed comparison of states)
-    - Prevent the bottleneck that will be the collapsing of events
-        because the order of some events would not be able to be enforced in the code
-    Cons:
-    - Keeping all the transitions makes it much closer to the proof
-    - Could be useful for concurrency issues in the code ... 
-        (for that, I would need a set of semaphore in the code to
-        control the speed of the execution)
-    - Requires more work in the spec
-    
-Todos :
-- Don't forget that you have to write now a formal specification in IO automaton
-    (I want to cry, I would not have mind doing that before but now, I feel like it is kinda useless ...)
-- Maybe start writting the repport (or at least addapt what I've done)
-- Start finishing the proof of Bracha (even thought the required proof are not yet done, it might 
-    be a smart thing to try to do it and then do the proofs the other way arround so at least I know
-    precisely what I need to prove)
-- For the joke, it would be fun if I could have a good fuzzer on Mondey, just to frustrate them as fuck hehehe
-- DO NOT PUSH THAT TO GITHUB PLEASE EMMANUEL
-
 *)
 
 ------------------------ MODULE DAGRider -----------------------
