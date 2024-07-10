@@ -425,9 +425,6 @@ impl Environment {
                     | None => return None,
                     | Some(v) => v
                 };
-                if source > 4 || source < 2 {
-                    return None;
-                }
                 if round == 0 {
                     return Some(Vertex::new(
                         Committee::default().get_node_key(source as u32).unwrap(),
