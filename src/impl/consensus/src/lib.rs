@@ -358,7 +358,6 @@ impl Consensus {
                 act_data.insert("p".to_string(), VarContent::Int(1));
                 actions.push(VarContent::Struct(act_data));
 
-
                 info!("Broadcast the new vertex {}", new_vertex);
                 self.vertex_to_broadcast_sender
                     .try_send(new_vertex)

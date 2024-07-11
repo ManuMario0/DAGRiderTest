@@ -107,7 +107,7 @@ FaultyType ==
    faulty \in SUBSET(ProcessorSet)
 
 InitFaulty ==
-   faulty = {1}
+   faulty = 2..NumProcessors
 
 -----------------------------------------------------------------------------
 (*-------------------------STATE-TRANSITIONS-------------------------------*)
@@ -270,6 +270,6 @@ Safety == Spec => [](Monotonicity /\ Consistency)
 
 =============================================================================
 \* Modification History
-\* Last modified Mon Jul 08 15:23:33 AEST 2024 by emmanuel
+\* Last modified Thu Jul 11 13:46:50 AEST 2024 by emmanuel
 \* Last modified Wed Apr 17 11:29:21 CEST 2024 by Pranav
 \* Created Thu Mar 21 18:03:56 AEDT 2024 by Pranav

@@ -13,7 +13,6 @@ h.close()
 
 subprocess.run(["java", "-XX:+UseParallelGC",
         "-jar", "/Applications/TLA+ Toolbox.app/Contents/Eclipse/tla2tools.jar",
-        "-deadlock",
         "-config", "../spec/constant-trick/MC.cfg",
         "../spec/constant-trick/MCtmp.tla"], check=True)
 

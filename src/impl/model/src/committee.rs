@@ -1,4 +1,4 @@
-use ed25519_dalek::Keypair;
+use ed25519_dalek::{Keypair, PublicKey};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -113,5 +113,14 @@ impl Committee {
 
     pub fn get_node_key(&self, id: Id) -> Option<NodePublicKey> {
         self.validators.get(&id).map(|v| v.public_key)
+    }
+
+    pub fn get_node_index(&self, key: NodePublicKey) -> Option<u32> {
+        for (v, x) in self.validators.iter() {
+            if x.public_key == key {
+                return Some(*v)
+            }
+        }
+        None
     }
 }

@@ -426,7 +426,7 @@ AddVertexTn(p, v) ==
    /\ v \in buffer[p]
    /\ p \notin faulty => v.round <= round[p]
    /\ p \notin faulty => dag[p][v.round][v.source] = NilVertex(v.source, v.round)
-   /\ p \notin faulty => v.edges \in InAddedVertex(p, v.round -1)
+   /\ p \notin faulty => \A _v \in v.strongedges : _v \in InAddedVertex(p, v.round -1)
    /\ dag'= [dag EXCEPT ![p][v.round][v.source] = v]
    /\ IF p \notin faulty THEN 
         IF v.round % 4 = 1 /\ v.source = ChooseLeader((v.round \div 4)+1) 

@@ -220,17 +220,17 @@ impl Environment {
                             self.vertex_channel_deliver.send(vert.clone()).await.unwrap();
                             let mut act_data = HashMap::new();
                             act_data.insert("name".to_string(), VarContent::String("FaultyBcastTn".to_string()));
-                            act_data.insert("p".to_string(), VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == vert.owner()).unwrap() as u64));
+                            act_data.insert("p".to_string(), VarContent::Int(Committee::default().get_node_index(vert.owner()).unwrap() as u64));
                             act_data.insert("v".to_string(), v.clone());
-                            act_data.insert("r".to_string(), VarContent::Int(vert.round()));
+                            act_data.insert("r".to_string(), VarContent::Int(vert.round()-1));
                             act.push(VarContent::Struct(act_data));
 
                             let mut act_data = HashMap::new();
                             act_data.insert("name".to_string(), VarContent::String("ReceiveVertexTn".to_string()));
                             act_data.insert("p".to_string(), VarContent::Int(1));
-                            act_data.insert("q".to_string(), VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == vert.owner()).unwrap() as u64));
+                            act_data.insert("q".to_string(), VarContent::Int(Committee::default().get_node_index(vert.owner()).unwrap() as u64));
                             act_data.insert("v".to_string(), v);
-                            act_data.insert("r".to_string(), VarContent::Int(vert.round()));
+                            act_data.insert("r".to_string(), VarContent::Int(vert.round() - 1));
                             act.push(VarContent::Struct(act_data));
                         },
                     }
@@ -280,17 +280,17 @@ impl Environment {
                                     self.vertex_channel_deliver.send(vert.clone()).await.unwrap();
                                     let mut act_data = HashMap::new();
                                     act_data.insert("name".to_string(), VarContent::String("FaultyBcastTn".to_string()));
-                                    act_data.insert("p".to_string(), VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == vert.owner()).unwrap() as u64));
+                                    act_data.insert("p".to_string(), VarContent::Int(Committee::default().get_node_index(vert.owner()).unwrap() as u64));
                                     act_data.insert("v".to_string(), d.clone());
-                                    act_data.insert("r".to_string(), VarContent::Int(vert.round()));
+                                    act_data.insert("r".to_string(), VarContent::Int(vert.round()-1));
                                     act.push(VarContent::Struct(act_data));
-        
+
                                     let mut act_data = HashMap::new();
                                     act_data.insert("name".to_string(), VarContent::String("ReceiveVertexTn".to_string()));
                                     act_data.insert("p".to_string(), VarContent::Int(1));
-                                    act_data.insert("q".to_string(), VarContent::Int(Committee::default().get_nodes_keys().iter().position(|x| return *x == vert.owner()).unwrap() as u64));
+                                    act_data.insert("q".to_string(), VarContent::Int(Committee::default().get_node_index(vert.owner()).unwrap() as u64));
                                     act_data.insert("v".to_string(), d);
-                                    act_data.insert("r".to_string(), VarContent::Int(vert.round()));
+                                    act_data.insert("r".to_string(), VarContent::Int(vert.round()-1));
                                     act.push(VarContent::Struct(act_data));
                                 }
                             }
